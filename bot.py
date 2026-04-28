@@ -5,15 +5,28 @@ import hmac
 import base64
 import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
-# ====== THAY THÔNG TIN ======
+# ====== THÔNG TIN ======
 TOKEN = "8749356697:AAFfiYD2SZPzXCaJpzVVh-fcJ8WhDC--_lo"
 host = "identify-ap-southeast-1.acrcloud.com"
 access_key = "296c929b5dc7ba13d230b5ef1124f920"
 access_secret = "mabjWhiYNpQWMbzzq43LckcuiOMLVYCIeZLVa9NH"
-# ===========================
+# ======================
 
+
+# ====== START ======
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = """👋 bot đẹp trai xin chào
+
+👉 Hãy gửi file nhạc của bạn để hệ thống xử lý nhé
+
+⚠️ Lưu ý: chỉ sử dụng file MP3, nếu file khác sẽ lỗi
+"""
+    await update.message.reply_text(text)
+
+
+# ====== NHẬN DIỆN ======
 def recognize(file_path):
     http_method = "POST"
     http_uri = "/v1/identify"
@@ -22,12 +35,8 @@ def recognize(file_path):
     timestamp = str(int(time.time()))
 
     string_to_sign = "\n".join([
-        http_method,
-        http_uri,
-        access_key,
-        data_type,
-        signature_version,
-        timestamp
+        http_method, http_uri, access_key,
+        data_type, signature_version, timestamp
     ])
 
     sign = base64.b64encode(
@@ -52,29 +61,82 @@ def recognize(file_path):
 
     return res.json()
 
-# ====== HANDLE AUDIO ======
+
+# ====== HANDLE ======
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Đang nhận diện...")
+    await update.message.reply_text("⏳ Đang xử lý...")
 
-    file = await update.message.audio.get_file()
-    file_path = "song.mp3"
-    await file.download_to_drive(file_path)
-
-    result = recognize(file_path)
+    file_path = None
 
     try:
-        music = result['metadata']['music'][0]
-        title = music['title']
-        artist = music['artists'][0]['name']
+        # 👉 lấy file + tên gốc
+        if update.message.audio:
+            file = await update.message.audio.get_file()
+            original_name = update.message.audio.file_name or "audio.mp3"
+        elif update.message.document:
+            file = await update.message.document.get_file()
+            original_name = update.message.document.file_name or "audio.mp3"
+        else:
+            await update.message.reply_text("❌ Không phải file mp3")
+            return
 
-        await update.message.reply_text(f"🎵 {title} - {artist}")
+        # 👉 tránh trùng tên
+        file_path = f"{update.message.message_id}_{original_name}"
+        await file.download_to_drive(file_path)
+
+        # 👉 gọi API
+        result = recognize(file_path)
+        print("API RESULT:", result)
+
+        # ====== LOGIC BẢN QUYỀN ======
+        title = "Không xác định"
+        artist = ""
+
+        # 🟢 mặc định = không bản quyền
+        copyright_status = "🟢 Không có bản quyền"
+
+        # 🔴 nếu nhận diện được = có bản quyền
+        if result.get("status", {}).get("code") == 0:
+            music = result['metadata']['music'][0]
+            title = music.get('title', 'Unknown')
+            artist = music.get('artists', [{}])[0].get('name', 'Unknown')
+            copyright_status = "🔴 Có bản quyền"
+
+        # 👉 caption đẹp
+        caption = f"""✅ ĐÃ XỬ LÝ THÀNH CÔNG!
+━━━━━━━━━━━━━━━
+🎵 Bài hát: {title} {('- ' + artist) if artist else ''}
+━━━━━━━━━━━━━━━
+
+📌 Bản quyền: {copyright_status}
+
+👉 File bên dưới để nghe & tải trực tiếp
+"""
+
+        print(">>> ĐANG GỬI FILE:", original_name)
+
+        # 👉 gửi lại file (GIỮ NGUYÊN TÊN)
+        with open(file_path, "rb") as f:
+            await update.message.reply_document(
+                document=f,
+                filename=original_name,
+                caption=caption
+            )
+
     except Exception as e:
-        print(result)  # debug
-        await update.message.reply_text("❌ Không nhận diện được")
+        print("LỖI:", e)
+        await update.message.reply_text("❌ Có lỗi xảy ra")
 
-# ====== CHẠY BOT ======
+    finally:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+
+# ====== RUN ======
 app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.AUDIO | filters.Document.ALL, handle_audio))
 
 print("Bot đang chạy...")
 app.run_polling()
