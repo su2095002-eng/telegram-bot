@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
 # ====== THÔNG TIN ======
-TOKEN = "8749356697:AAFfiYD2SZPzXCaJpzVVh-fcJ8WhDC--_lo"
+TOKEN = "8662314538:AAGKp2cZs-1GaS9bU6sayKzd4X89QY_mvwQ"
 host = "identify-ap-southeast-1.acrcloud.com"
 access_key = "296c929b5dc7ba13d230b5ef1124f920"
 access_secret = "mabjWhiYNpQWMbzzq43LckcuiOMLVYCIeZLVa9NH"
